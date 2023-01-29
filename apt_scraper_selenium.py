@@ -5,7 +5,7 @@ Created on Sun Jul 26 13:39:55 2020
 @author: bdaet
 """
 import seleniumwire.webdriver
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -25,84 +25,106 @@ url = f'https://www.apartments.com/{place}/'
 num_pages = 28
 
 # max delay for WebDriverWait function
-max_delay = 5
+max_delay = 12
 
 df = pd.DataFrame()
 
-# looping through specified number of pages
-for j in range(num_pages):
-    print('Page Number: {}'.format('' + str(j + 1)))
 
-    if j > 0:
-        driver.get(url + '/' + str(j + 1) + '/')
-    else:
-        driver.get(url)
+def main():
+    # looping through specified number of pages
+    for j in range(num_pages):
+        print('Page Number: {}'.format('' + str(j + 1)))
 
-    # wait for web page to load before getting list of placardTitle elements
-    input('Press Enter to continue...')
-
-    # going through each apartment listing on page
-    num_placards = len(driver.find_elements(By.CLASS_NAME, 'placard-content'))
-    for i in range(num_placards):
-        print('Progess: {}'.format('' + str(i + 1) + '/' + str(num_placards)))
+        if j > 0:
+            driver.get(url + '/' + str(j + 1) + '/')
+        else:
+            driver.get(url)
 
         # wait for web page to load before getting list of placardTitle elements
         WebDriverWait(driver, max_delay).until(EC.presence_of_element_located((By.CLASS_NAME, 'placard-content')))
-        apt_buttons = driver.find_elements(By.CLASS_NAME, 'placard-content')
 
-        apt_buttons[i].click()
+        # going through each apartment listing on page
+        num_placards = len(driver.find_elements(By.CLASS_NAME, 'placard-content'))
+        for i in range(num_placards):
+            if i % 2 == 0:
+                print('\nProgess: {}\n\n'.format('' + str(i + 1) + '/' + str(num_placards)))
 
-        # wait for web page to load before scraping
-        WebDriverWait(driver, max_delay).until(EC.presence_of_element_located((By.CLASS_NAME, 'rentalGridRow')))
-
-        listings_dict = ({'Title': [],
-                          'Address': [],
-                          'Bedrooms': [],
-                          'Bathrooms': [],
-                          'Rent': [],
-                          'Square Footage': [],
-                          'Availability': [],
-                          'Amenities': []})
-
-        # getting elements for entire property
-        title = driver.find_elements(By.CLASS_NAME, 'property-title')
-        address = driver.find_elements(By.CLASS_NAME, 'property-address js-url')
-
-        amenities = driver.find_elements(By.CLASS_NAME, 'amenitiesSection')
-
-        amenity_rows = amenities.find_elements(By.CSS_SELECTOR, 'li')
-        amenity_data = []
-        for row in amenity_rows:
-            amenity = re.sub(u'•', '', re.sub('<[^<]+?>', '', row.get_attribute('innerHTML')))
-            amenity_data.append(amenity)
-        amenity_string = ', '.join(amenity_data)
-
-        # getting elements for each apartment
-        rows = driver.find_elements(By.CLASS_NAME, 'rentalGridRow')
-        for row in rows:
+            # wait for web page to load before getting list of placardTitle elements
+            WebDriverWait(driver, max_delay).until(EC.presence_of_element_located((By.CLASS_NAME, 'placard-content')))
+            apt_buttons = driver.find_elements(By.CLASS_NAME, 'property-link')
             try:
-                if row.find_elements(By.CLASS_NAME, 'rent').text == u'':
-                    continue
-                listings_dict['Bedrooms'].append(row.find_elements(By.CLASS_NAME, 'beds').text)
-                listings_dict['Bathrooms'].append(row.find_elements(By.CLASS_NAME, 'baths').text)
-                listings_dict['Rent'].append(row.find_elements(By.CLASS_NAME, 'rent').text)
-                listings_dict['Square Footage'].append(row.find_elements(By.CLASS_NAME, 'sqft').text)
-                listings_dict['Availability'].append(row.find_elements(By.CLASS_NAME, 'available').text)
-                listings_dict['Title'].append(title)
-                listings_dict['Address'].append(address)
-                listings_dict['Amenities'].append(amenity_string)
-            except NoSuchElementException:
+                apt_buttons[i].click()
+            except ElementNotInteractableException:
+                i += 1
                 continue
+            # wait for web page to load before scraping
+            try:
+                WebDriverWait(driver, max_delay).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'pricingGridTitleBlock')))
+            except TimeoutException:
+                driver.execute_script("window.stop();")
+                print("Timeout exception caught, continuing...")
 
-        # converting dictionary to dataframe
-        listing_df = pd.DataFrame(listings_dict)
+            # getting elements for entire property
+            titles = driver.find_elements(By.CLASS_NAME, 'propertyName')
+            addresses = driver.find_elements(By.CLASS_NAME, 'delivery-address')
+            listings_dict = {}
+            # get model information
+            try:
+                model_names = driver.find_elements(By.CLASS_NAME, 'modelName')
+                for model_name in model_names:
+                    print(f'Model Name: {model_name.text}')
+                    listings_dict['Model Name'].append(model_name.text)
+                rent_labels = driver.find_elements(By.CLASS_NAME, 'rentLabel')
+                for rent in rent_labels:
+                    print(f'Rent: {rent.text}')
+                    listings_dict['Rent'].append(rent.text)
+                detailsTextWrapper = driver.find_elements(By.CLASS_NAME, 'detailsTextWrapper')
+                for detail in detailsTextWrapper:
+                    print(f'Details: {detail.text}')
+                    listings_dict['Details'].append(detail.text)
+            except NoSuchElementException:
+                pass
+            except KeyError:
+                pass
+            # get property information
+            for title, address in zip(titles, addresses):
+                print(f'{title.text}')
+                print(f'Address: {address.text}')
+                if title.text not in listings_dict:
+                    listings_dict[title.text] = []
+                listings_dict[title.text].append(address.text)
 
-        # adding data from this listing to larger dataframe with data for all listings
-        df = pd.concat([df, listing_df], axis=0, sort=False)
+            amenity_rows = driver.find_elements(By.CLASS_NAME, 'specInfo')
+            amenity_data = []
+            print('Amenities: ')
+            for row in amenity_rows:
+                amenity_data.append(row.text)
+            amenity_string = ', '.join(amenity_data)
+            print(amenity_string)
+            try:
+                listings_dict['Amenities'].append(amenity_string)
+            except KeyError:
+                listings_dict['Amenities'] = [amenity_string]
 
-        driver.back()  # to go back to main page
+            # getting elements for each apartment
+            labels, details = driver.find_elements(By.CLASS_NAME, 'rentInfoLabel'), driver.find_elements(By.CLASS_NAME,
+                                                                                                         'rentInfoDetail')
+            for label, detail in zip(labels, details):
+                print(f'{label.text}: {detail.text}')
+                if label.text not in listings_dict:
+                    listings_dict[label.text] = []
+                listings_dict[label.text].append(detail.text)
 
-# resetting index for dataframe
-df.reset_index(drop=True, inplace=True)
+            listing_df = pd.DataFrame(listings_dict)
 
-df.to_csv(f'{place.replace("-", "_")}_data.csv', index=False)
+            # adding data from this listing to larger dataframe with data for all listings
+            df = pd.concat([df, listing_df], axis=0, sort=False)
+
+            # resetting index for dataframe
+            df.reset_index(drop=True, inplace=True)
+            # create string dt to store current date and time
+            dt = pd.to_datetime('today').strftime('%Y-%m-%d_%H-%M-%S')
+            df.to_csv(f'apt_data\\{place.replace("-", "_")}{dt}.csv', index=False)
+
+            driver.back()  # to go back to main page
