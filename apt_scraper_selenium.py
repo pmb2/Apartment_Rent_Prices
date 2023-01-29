@@ -4,7 +4,7 @@ Created on Sun Jul 26 13:39:55 2020
 
 @author: bdaet
 """
-from selenium import webdriver
+import seleniumwire.webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -13,10 +13,10 @@ import pandas as pd
 import re
 
 # initializing the webdriver
-options = webdriver.ChromeOptions()
+options = seleniumwire.webdriver.ChromeOptions()
 
 # set path to driver
-driver = webdriver.Chrome(options=options)
+driver = seleniumwire.webdriver.Chrome(options=options)
 driver.set_window_size(1120, 1000)
 place = 'schenectady-ny'
 url = f'https://www.apartments.com/{place}/'
@@ -38,14 +38,17 @@ for j in range(num_pages):
     else:
         driver.get(url)
 
+    # wait for web page to load before getting list of placardTitle elements
+    input('Press Enter to continue...')
+
     # going through each apartment listing on page
-    num_placards = len(driver.find_elements(By.CLASS_NAME, 'placardTitle'))
+    num_placards = len(driver.find_elements(By.CLASS_NAME, 'placard-content'))
     for i in range(num_placards):
         print('Progess: {}'.format('' + str(i + 1) + '/' + str(num_placards)))
 
         # wait for web page to load before getting list of placardTitle elements
-        WebDriverWait(driver, max_delay).until(EC.presence_of_element_located((By.CLASS_NAME, 'placardTitle')))
-        apt_buttons = driver.find_elements(By.CLASS_NAME, 'placardTitle')
+        WebDriverWait(driver, max_delay).until(EC.presence_of_element_located((By.CLASS_NAME, 'placard-content')))
+        apt_buttons = driver.find_elements(By.CLASS_NAME, 'placard-content')
 
         apt_buttons[i].click()
 
@@ -62,10 +65,11 @@ for j in range(num_pages):
                           'Amenities': []})
 
         # getting elements for entire property
-        title = driver.find_elements(By.CLASS_NAME, 'propertyName').text
-        address = driver.find_elements(By.CLASS_NAME, 'propertyAddress').text
+        title = driver.find_elements(By.CLASS_NAME, 'property-title')
+        address = driver.find_elements(By.CLASS_NAME, 'property-address js-url')
 
         amenities = driver.find_elements(By.CLASS_NAME, 'amenitiesSection')
+
         amenity_rows = amenities.find_elements(By.CSS_SELECTOR, 'li')
         amenity_data = []
         for row in amenity_rows:
